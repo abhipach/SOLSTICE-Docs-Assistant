@@ -1,0 +1,3 @@
+streamlit>=1.35
+# Optional: only needed for LLM answer synthesis (the app works fully without it)
+anthropic>=0.40

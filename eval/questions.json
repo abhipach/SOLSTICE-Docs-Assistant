@@ -1,0 +1,18 @@
+[
+ {"q": "How do I reset my password?", "expect": "answer", "article": "01_account_access", "must_contain": ["60 minutes"]},
+ {"q": "A user forgot their password, can I set a new one for them?", "expect": "answer", "article": "01_account_access", "must_contain": ["cannot view or set"]},
+ {"q": "What is the export limit?", "expect": "answer", "article": "03_reports_and_exports", "must_contain": ["10,000", "100,000"]},
+ {"q": "Can I export 200,000 rows?", "expect": "answer", "article": "03_reports_and_exports", "must_contain": ["100,000"]},
+ {"q": "When are monthly invoices issued?", "expect": "answer", "article": "04_billing", "must_contain": ["1st"]},
+ {"q": "How do I get a refund?", "expect": "answer", "article": "04_billing", "must_contain": ["30 days"]},
+ {"q": "Do you support OIDC for single sign-on?", "expect": "answer", "article": "05_sso_and_provisioning", "must_contain": ["not supported"]},
+ {"q": "What's the max SCORM package size?", "expect": "answer", "article": "06_courses_and_content", "must_contain": ["2 GB"]},
+ {"q": "How do I unlock a locked account?", "expect": "answer", "article": "01_account_access", "must_contain": ["Owner"]},
+ {"q": "Does Solstice integrate with Salesforce?", "expect": "no_answer"},
+ {"q": "What is your API rate limit?", "expect": "no_answer"},
+ {"q": "Where is my data stored? Do you offer EU data residency?", "expect": "no_answer"},
+ {"q": "Can learners use the mobile app offline?", "expect": "no_answer"},
+ {"q": "How do I add a custom logo and brand colours?", "expect": "no_answer"},
+ {"q": "When does it expire?", "expect": "ambiguous"},
+ {"q": "How long is the reset link valid?", "expect": "answer", "article": "01_account_access", "must_contain": ["60 minutes"]}
+]
