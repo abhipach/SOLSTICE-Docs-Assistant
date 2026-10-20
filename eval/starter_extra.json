@@ -1,0 +1,13 @@
+[
+ {"q": "How do I reset my password?", "expect": "answer", "article": "D-01", "must_contain": ["Forgot password"]},
+ {"q": "How long do I have to use a password reset link before it expires?", "expect": "answer", "article": "D-01", "must_contain": ["15 minutes"]},
+ {"q": "What's the maximum number of rows I can export to CSV?", "expect": "answer", "article": "D-03", "must_contain": ["10,000"]},
+ {"q": "What are the API rate limits for the Growth plan?", "expect": "answer", "article": "D-06", "must_contain": ["60 requests"]},
+ {"q": "How many rows can I export?", "expect": "answer", "article": "D-03", "must_contain": ["10,000"]},
+ {"q": "What roles can I assign?", "expect": "related"},
+ {"q": "How do I invite someone?", "expect": "answer", "article": "D-02", "must_contain": ["Invite Member"]},
+ {"q": "Can I connect Solstice to Salesforce?", "expect": "no_answer"},
+ {"q": "How do I contact support?", "expect": "related"},
+ {"q": "How do I enable 2FA?", "expect": "no_answer"},
+ {"q": "Is there a mobile app?", "expect": "no_answer"}
+]

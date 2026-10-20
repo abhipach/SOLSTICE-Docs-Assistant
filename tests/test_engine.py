@@ -7,6 +7,7 @@ from docqa.engine import Assistant, Config
 from docqa.text import tokenize
 
 bot = Assistant(ROOT / "data" / "docs", Config())
+seed_bot = Assistant(ROOT / "starter_kit" / "data", Config())
 
 
 class TestText(unittest.TestCase):
@@ -16,6 +17,15 @@ class TestText(unittest.TestCase):
 
     def test_stopwords(self):
         self.assertEqual(tokenize("how do I the"), [])
+
+
+class TestIncidentalMatch(unittest.TestCase):
+    def test_contact_support_is_not_answered_from_export_article(self):
+        # "contact support" appears only as a closing aside in the export article
+        self.assertNotEqual(seed_bot.ask("How do I contact support?").status, "answer")
+
+    def test_how_many_is_not_a_content_term(self):
+        self.assertEqual(seed_bot.ask("How many rows can I export?").status, "answer")
 
 
 class TestDecisions(unittest.TestCase):
@@ -45,6 +55,25 @@ class TestDecisions(unittest.TestCase):
         r = bot.ask("When does it expire?")
         self.assertEqual(r.status, "ambiguous")
         self.assertGreaterEqual(len(r.options), 2)
+
+
+class TestProvidedSeed(unittest.TestCase):
+    def test_all_provided_questions(self):
+        examples = [
+            ("How do I reset my password?", "D-01"),
+            ("How long do I have to use a password reset link before it expires?", "D-01"),
+            ("What's the maximum number of rows I can export to CSV?", "D-03"),
+            ("What are the API rate limits for the Growth plan?", "D-06"),
+        ]
+        for question, article_id in examples:
+            with self.subTest(question=question):
+                result = seed_bot.ask(question)
+                self.assertEqual(result.status, "answer")
+                self.assertIn(article_id, [hit.chunk.article_id for hit in result.sources])
+
+    def test_provided_out_of_scope_question_declines(self):
+        result = seed_bot.ask("Can I connect Solstice to Salesforce?")
+        self.assertEqual(result.status, "no_answer")
 
 
 if __name__ == "__main__":

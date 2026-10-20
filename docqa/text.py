@@ -11,6 +11,7 @@ do does did can could should would will may might must how what when where which
 i me my we our you your it its this that these those there here they them their he she
 get got have has had any some more than then just also about into out up not no yes
 need want please tell show give know like thing things way able new one them s t
+before use long many much someone else
 """.split())
 
 # Words an admin might use that the docs phrase differently.
@@ -32,6 +33,7 @@ _RAW_SYNONYMS = {
     "2fa": ["mfa"], "mfa": ["multi", "factor", "authentication"],
     "saml": ["sso"], "idp": ["identity", "provider"],
     "cancel": ["refund"], "money": ["refund"],
+    "assign": ["choose", "role"], "requirement": ["character"],
 }
 
 

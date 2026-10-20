@@ -17,6 +17,7 @@ class Config:
     related_cov: float = 0.45    # >= : show "related, not sure" ; < : decline
     ambiguity_margin: float = 0.10
     ambiguity_max_terms: int = 3
+    topic_gate_max_terms: int = 2
     top_k: int = 3
     use_llm: bool = False
 
@@ -30,6 +31,8 @@ class Answer:
     options: list[Hit] = field(default_factory=list)   # for ambiguous
     mode: str = "extractive"     # extractive | llm
     missing_terms: list[str] = field(default_factory=list)
+    rewritten_query: str | None = None   # set when the LLM reworded the question to match the docs
+    baseline_status: str | None = None   # status the plain (no-LLM) search gave for the original text
 
 
 NO_ANSWER = "I don't have an answer for that in the documentation."
@@ -40,7 +43,60 @@ class Assistant:
         self.cfg = config or Config()
         self.index = Index(load_chunks(doc_dir))
 
-    def ask(self, query: str) -> Answer:
+    def _llm_on(self, use_llm: bool | None) -> bool:
+        return bool((self.cfg.use_llm if use_llm is None else use_llm) and llm.available())
+
+    def suggest_rewrite(self, query: str, *, use_llm: bool | None = None) -> str | None:
+        """LLM's cleaner version of the question ("reset pwd" -> "How do I reset my password?"),
+        or None when the LLM is off/unavailable or the question needs no change. Used for the
+        "Did you mean ...?" confirmation step."""
+        if not self._llm_on(use_llm):
+            return None
+        return llm.rewrite_query(query, self.index.topics())
+
+    def ask(
+        self,
+        query: str,
+        *,
+        use_llm: bool | None = None,
+        rewritten: str | None = None,
+        auto_rewrite: bool = True,
+    ) -> Answer:
+        """Answer a question.
+
+        Without an LLM the query is matched as typed, so "reset pwd" is honestly declined.
+        With an LLM enabled the question can be reworded into the docs' vocabulary:
+          * rewritten=...   the user confirmed a suggestion; search with it (see suggest_rewrite).
+          * auto_rewrite    no confirmation UI (CLI/eval): if the first try fails, rewrite and retry.
+        Either way the reworded query goes through the same coverage gates, so rewriting can only help
+        retrieval, never force an answer. The result records `baseline_status` - what the plain,
+        no-LLM search would have said - so the benefit of the LLM is visible.
+        """
+        llm_on = self._llm_on(use_llm)
+        if rewritten and llm_on:
+            ans = self._decide(rewritten, llm_on, original_query=query)
+            ans.rewritten_query = rewritten
+            ans.baseline_status = self._decide(query, False).status
+            return ans
+
+        first = self._decide(query, llm_on)
+        if not llm_on or not auto_rewrite or first.status not in ("no_answer", "related"):
+            return first
+
+        rewritten = self.suggest_rewrite(query, use_llm=use_llm)
+        if not rewritten:
+            return first
+        second = self._decide(rewritten, llm_on, original_query=query)
+        # Keep the retry only if it is a real improvement; otherwise the original verdict stands.
+        if second.status in ("answer", "ambiguous") or (
+            second.status == "related" and first.status == "no_answer"
+        ):
+            second.rewritten_query = rewritten
+            second.baseline_status = first.status
+            return second
+        return first
+
+    def _decide(self, query: str, llm_on: bool, original_query: str | None = None) -> Answer:
         cfg = self.cfg
         groups, hits = self.index.search(query, k=8)
         if not groups:
@@ -76,8 +132,12 @@ class Assistant:
                     conf, options=opts[:4],
                 )
 
-        # --- related: partial support, never present as a definitive answer
-        if conf < cfg.answer_cov:
+        # --- related: partial support, never present as a definitive answer.
+        # Also applies to very short queries (<= topic_gate_max_terms content terms) where no term
+        # touches the passage's title/heading: the match is then likely incidental (e.g. "contact
+        # support" matching an export article's closing sentence). Heuristic; tune on real traffic.
+        incidental = not top.topic_match and len(groups) <= cfg.topic_gate_max_terms
+        if conf < cfg.answer_cov or incidental:
             return Answer(
                 "related",
                 "I couldn't find a direct answer, but these sections may be relevant. "
@@ -92,8 +152,8 @@ class Assistant:
             if h.coverage >= cfg.answer_cov and h.rank >= 0.8 * top.rank
         ][: cfg.top_k - 1]
 
-        if cfg.use_llm and llm.available():
-            res = llm.synthesize(query, sources)
+        if llm_on:
+            res = llm.synthesize(original_query or query, sources)
             if res is not None:
                 if not res.get("answerable"):
                     # LLM is a second, independent veto on the retrieval gate.
@@ -116,6 +176,8 @@ def log_event(path: str | Path, query: str, ans: Answer, feedback: str | None = 
         "confidence": round(ans.confidence, 3),
         "top_source": ans.sources[0].chunk.id if ans.sources else None,
         "missing_terms": ans.missing_terms,
+        "rewritten_query": ans.rewritten_query,
+        "baseline_status": ans.baseline_status,
         "feedback": feedback,
     }
     with p.open("a", encoding="utf-8") as f:

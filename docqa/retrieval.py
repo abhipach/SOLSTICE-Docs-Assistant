@@ -28,6 +28,7 @@ class Hit:
     coverage: float      # 0..1 idf-weighted share of query terms found in the passage
     rank: float
     missing: list[str]
+    topic_match: bool = True   # a query term (or synonym) appears in the article title/heading
 
 
 class Index:
@@ -46,6 +47,13 @@ class Index:
         should count *against* confidence, not be ignored."""
         df = self.df.get(term, 0)
         return math.log(1 + (self.N - df + 0.5) / (df + 0.5))
+
+    def topics(self) -> list[str]:
+        """Unique 'Article > Heading' labels, used to steer LLM query rewriting."""
+        seen: dict[str, None] = {}
+        for c in self.chunks:
+            seen[f"{c.article} > {c.heading}"] = None
+        return list(seen)
 
     # ---------------------------------------------------------------- query
     def groups(self, query: str) -> list[Group]:
@@ -93,7 +101,8 @@ class Index:
 
         top = max(r[0] for r in raw) or 1.0
         hits = [
-            Hit(ch, s, cov, 0.4 * (s / top) + 0.6 * cov, miss)
+            Hit(ch, s, cov, 0.4 * (s / top) + 0.6 * cov, miss,
+                any(a in ch.head_tokens for g in groups for a in g.alts))
             for s, cov, miss, ch in raw
             if s > 0
         ]

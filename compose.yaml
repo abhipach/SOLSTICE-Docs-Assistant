@@ -1,0 +1,16 @@
+services:
+  solstice-docs-assistant:
+    build: .
+    image: solstice-docs-assistant:local
+    ports:
+      - "8501:8501"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GEMINI_TIMEOUT_SECONDS: ${GEMINI_TIMEOUT_SECONDS:-120}
+    volumes:
+      - query-logs:/app/data/logs
+    restart: unless-stopped
+
+volumes:
+  query-logs:
