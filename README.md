@@ -29,11 +29,11 @@ The log contains raw question text. Restrict access to the Support insights view
 
 ## Demo login
 
-Sign in with the fixed demo credentials: username `admin`, password `123456`. There is no signup or additional-user setup. This shared, weak password is for local demonstrations only; do not deploy this login publicly or use it for real customer data. Replace it with managed SSO/OIDC and proper access controls before production. The Gemini key remains in the local, git-ignored `.streamlit\secrets.toml` file; never commit that file.
+Sign in with the fixed demo credentials: username `admin`, password `123456`. There is no signup or additional-user setup. This shared, weak password is for local demonstrations only; do not deploy this login publicly or use it for real customer data. Replace it with managed SSO/OIDC and proper access controls before production. If you configure Gemini in `.streamlit\secrets.toml`, keep that git-ignored file private and never commit it.
 
-### Configure Gemini answer polishing
+### Configure Gemini
 
-Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` (git-ignored) and add your Gemini API key:
+For a local Streamlit run, create `.streamlit/secrets.toml` (git-ignored) with your Gemini API key:
 
 ```toml
 [gemini]
@@ -42,9 +42,9 @@ model = "gemini-3.8-flash"
 timeout_seconds = 120
 ```
 
-The app reads the key and settings directly from this file; no environment variable or `.env` file is used. The LLM backend is Gemini only; a missing key or API failure leaves the extractive answer in place. Restart Streamlit after changing the secrets file. Never commit real keys or share them in chat.
+The app reads Gemini settings from this file. It also accepts `GEMINI_API_KEY`, `GEMINI_MODEL`, and `GEMINI_TIMEOUT_SECONDS` environment variables; environment values override the corresponding values in `secrets.toml`. This is useful for containers and secret managers. The LLM backend is Gemini only; without a key, the app stays in retrieval-only mode. If Gemini fails while polishing an answer, the app shows the extractive answer instead. Restart Streamlit after changing the configuration. Never commit real keys or share them in chat.
 
-The Gemini integration uses the SDK's Interactions API. `requirements.txt` requires `google-genai` 2.0.0 or newer; reinstall dependencies after updating an existing checkout with `python -m pip install --upgrade -r requirements.txt`.
+When Gemini is enabled, it may first suggest a clearer version of a query for confirmation, then polish an answer only after retrieval finds a sufficiently supported passage. The Gemini integration uses the SDK's Interactions API. `requirements.txt` requires `google-genai` 2.0.0 or newer; reinstall dependencies after updating an existing checkout with `python -m pip install --upgrade -r requirements.txt`.
 
 ## Run with Docker
 
@@ -73,6 +73,8 @@ docker run --rm -p 8501:8501 -e GEMINI_API_KEY solstice-docs-assistant
 ```
 
 The included login is demo-only (`admin` / `123456`) and is not suitable for a public or production deployment. Do not expose this container to untrusted networks without replacing the demo authentication and adding appropriate access controls. `.dockerignore` excludes local Streamlit secrets, environment files, caches, tests, and logs from the image build context.
+
+The Docker image includes the default `starter_kit/data` corpus, runs as a non-root user, and exposes Streamlit on port `8501`. The Compose service has a health check and persists logs in a named volume. To publish the image, tag it with your registry namespace and push it; for example, `docker tag solstice-docs-assistant:local YOUR_DOCKERHUB_USERNAME/solstice-docs-assistant:latest`, followed by `docker push YOUR_DOCKERHUB_USERNAME/solstice-docs-assistant:latest`.
 
 ## Run the provided example questions
 
@@ -113,6 +115,9 @@ Do not mix `docs.json` and Markdown articles in the same directory; the loader r
 ```text
 app.py                    Streamlit UI and default starter-kit corpus
 docqa/                    Loader, text processing, retrieval, answer policy, optional LLM
+Dockerfile                Container image definition
+compose.yaml              Local container service and persistent query-log volume
+.dockerignore             Files excluded from the image build context
 starter_kit/data/         Provided JSON seed docs and example questions
 data/docs/                Additional Markdown corpus for regression evaluation
 eval/run_eval.py          Evaluates either provided or custom question sets
@@ -129,10 +134,10 @@ python -m unittest discover -s tests -v
 
 ## Known limitations
 
-- Very short queries whose terms miss a passage's title/heading are shown as "related" rather than answered (e.g. "What roles can I assign?"); this over-refuses some answerable questions by design.
+- Very short queries (at most two content terms) whose terms miss a passage's title/heading are shown as "related" rather than answered (e.g. "contact support"); this over-refuses some answerable questions by design.
 - Answers are whole passages; the key sentence is not highlighted yet.
 - Keyword/BM25 retrieval can miss paraphrases with little vocabulary overlap.
 - The confidence thresholds and synonym map need tuning against real admin questions.
-- Optional LLM output has citation and numeric checks, but retrieval-only answers provide the strongest grounding.
+- Optional LLM output has citation and numeric checks, but retrieval-only answers provide the strongest grounding. Query rewriting and answer synthesis both call Gemini and can add latency or encounter rate limits; if synthesis fails, a supported answer falls back to the documentation text.
 - Query logs store raw questions in `data/logs/queries.jsonl`; define access controls and retention before production.
 - Documentation is indexed at app startup; production use should refresh the index when docs change.

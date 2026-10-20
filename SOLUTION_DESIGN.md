@@ -7,7 +7,7 @@ Elena's non-negotiable: **if the docs don't cover it, say so - never invent an a
 1. In-scope questions return the right passage with the required facts.
 2. **Zero false answers on out-of-scope questions** (headline metric).
 3. Ambiguous questions get a clarifying choice, not a guess.
-4. Sub-second latency without an LLM, low cost, explainable decisions.
+4. Target sub-second latency without an LLM, low cost, explainable decisions.
 
 ## 2. Assumptions
 | Open question | Decision | Reason |
@@ -22,35 +22,41 @@ Elena's non-negotiable: **if the docs don't cover it, say so - never invent an a
 
 ## 3. Architecture
 ```
-question -> tokenise/stem/stop-words -> synonym groups
-         -> BM25 over section passages + coverage = sum(idf of covered terms) / sum(idf of all terms)
-            rank = 0.4*bm25_norm + 0.6*coverage
+question -> tokenise/stem/stop-words -> synonym groups -> BM25 + coverage retrieval
          -> decision layer (engine.py)
               coverage < 0.45 ............................. no_answer
               short query, >=2 articles within 10% ........ ambiguous (ask which)
               coverage < 0.75, or very short query whose
               terms miss the passage title/heading ........ related (shown, not asserted)
-              otherwise ................................... answer -> [optional LLM] -> verified output
+              otherwise ................................... answer + Doc ID source
+                   -> [optional Gemini synthesis] -> verified output
+         no_answer / related -> [optional Gemini rewrite] -> user confirms -> search again
          -> log (query, status, confidence, unmatched terms) -> Support insights tab
 ```
 **Why coverage:** BM25 is relative - a "best" passage exists even for nonsense. Refusing needs an *absolute* signal.
 Rare unseen words (Salesforce, residency) have maximal idf and count against confidence; numbers help ranking but are
-not required; every refusal lists its unmatched terms. **Incidental-match guard:** a 2-word query such as "contact
-support" fully matched a closing aside in the export article; very short queries whose terms never touch the
-passage's title/heading are therefore downgraded to "related".
+not required. Unmatched terms are recorded in the query log and shown in retrieval details when enabled; they are not
+always displayed to users. **Incidental-match guard:** a 2-word query such as "contact support" fully matched a closing
+aside in the export article; very short queries whose terms never touch the passage's title/heading are therefore
+downgraded to "related".
 
 ## 4. Passage granularity
 One passage per `##` section (split above 140 words on paragraph boundaries); the provided JSON docs are one overview
 section each. Title and heading are up-weighted. Sections are self-contained answers; smaller chunks lose context
-(a limit without its plan), larger ones dilute scores. The app loads `starter_kit/data`; `data/docs` is a separate
-synthetic Markdown corpus used only for regression evaluation.
+(a limit without its plan), larger ones dilute scores. Answer sources display the document ID, title, and section
+heading. The app loads `starter_kit/data`; `data/docs` is a separate synthetic Markdown corpus used only for
+regression evaluation.
 
 ## 5. LLM: whether and how
 **Default is extractive**: the answer is the docs' own text, so it cannot hallucinate, costs nothing and works offline.
-The optional Gemini layer (`docqa/llm.py`) only rewords, with guards: it runs only after retrieval said "answer";
-it must cite retrieved passages; it can veto (`answerable=false` -> we decline); every number in its answer must appear
-in a cited passage; any API/parse failure falls back to the extractive answer. I did not let the LLM decide whether the
-docs cover a question across the corpus - that is the failure the customer fears.
+When enabled, Gemini has two separate uses. If initial retrieval returns `no_answer` or `related`, the UI may ask Gemini
+to suggest a clearer query and asks the user to confirm before searching again; the CLI/evaluation path can retry
+automatically. After retrieval finds a confident answer, Gemini may synthesize it from the retrieved passages. The
+synthesis must cite those passages; it can veto (`answerable=false` -> we decline); every number in its answer must
+appear in a cited passage; API/parse failures fall back to the extractive answer. In either flow, retrieval coverage
+remains the gate: the LLM cannot make unsupported documentation count as evidence. The default model is
+`gemini-3.8-flash`, accessed through the Google GenAI SDK Interactions API. Query rewriting and synthesis can make two
+separate API calls for a single confirmed question, so latency and rate limits are operational considerations.
 
 ## 6. Ambiguity handling
 Query ambiguity (<=3 terms, strong matches in >=2 articles) shows options as buttons; plan-specific facts are returned
@@ -69,8 +75,13 @@ together; partial matches are labelled "related"; a small auditable synonym tabl
 * No negation understanding, single-turn only, answers are whole passages (highlighting the best sentence is next).
 * The demo login is not a security boundary; the query log stores raw questions, so define access and retention first.
 * Index is built at startup; re-index on doc publish. Beyond ~10^5 passages use FTS5/pgvector/Elasticsearch behind `Index.search`.
+* The Docker image uses Python 3.11 slim, runs as a non-root user, serves on port 8501, and includes a health check.
+  Compose can supply Gemini settings from the environment and persists query logs in a named volume. Keys must be
+  injected at runtime, never included in the image. The included `admin` / `123456` login remains demo-only; the
+  container is not production-ready for untrusted/public deployment without replacing authentication and adding access
+  controls.
 
 ## 8. If challenged
 * *Why not RAG?* Not fabricating is the top requirement; a gated extractive design makes it structural, the LLM is additive.
-* *Why was my question refused?* The UI/log shows unmatched terms: add a synonym or doc content, or tune the threshold.
+* *Why was my question refused?* Retrieval details (when enabled) and the query log show unmatched terms: add a synonym or doc content, or tune the threshold.
 * *Contradicting docs?* Both passages are returned with sources, never silently merged.
